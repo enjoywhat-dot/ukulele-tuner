@@ -14,9 +14,13 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%}
 #headstock-img{
   position:absolute;
   z-index:3;
-  box-sizing:border-box;
   pointer-events:none;
   object-fit:contain;
+  /* Bottom half of screen, with 30/180 = 16.67% left/right margins */
+  top:50%;
+  left:16.67%;
+  width:66.67%;
+  height:50%;
 }
 #startBtn{
   position:absolute;
@@ -332,14 +336,7 @@ for (var i = 0; i < 3; i++) {
   bgNotePos.push({ x: BG_RIGHT_X, y: cy });
 }
 
-// Headstock placeholder
-(function() {
-  var el = document.getElementById('headstock-img');
-  el.style.top = '50%';
-  el.style.height = '50%';
-  el.style.left = (30 / 180 * 100).toFixed(2) + '%';
-  el.style.width = ((180 - 60) / 180 * 100).toFixed(2) + '%';
-})();
+// Headstock image positioned via CSS
 
 // ========================================
 // DRAW LAYER 0: BACKGROUND
@@ -462,12 +459,6 @@ function drawPixel() {
   }
   ctx.fillStyle = '#FF5050';
   ctx.fillRect(mx + nc * (oR + 1) | 0, my + ns * (oR + 1) | 0, 2, 2);
-  // Corner brackets
-  ctx.fillStyle = '#3D2E0A';
-  for (var i = 0; i < 8; i++) { ctx.fillRect(3, 3 + i, 1, 1); ctx.fillRect(3 + i, 3, 1, 1); }
-  for (var i = 0; i < 8; i++) { ctx.fillRect(176, 3 + i, 1, 1); ctx.fillRect(176 - i, 3, 1, 1); }
-  for (var i = 0; i < 8; i++) { ctx.fillRect(3, 316 - i, 1, 1); ctx.fillRect(3 + i, 316, 1, 1); }
-  for (var i = 0; i < 8; i++) { ctx.fillRect(176, 316 - i, 1, 1); ctx.fillRect(176 - i, 316, 1, 1); }
   // Status
   ctx.fillStyle = '#3D2E0A';
   ctx.font = "3px 'Courier New',monospace";
