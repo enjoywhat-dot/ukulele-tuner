@@ -11,17 +11,6 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%}
 #cBg{z-index:0}
 #c{image-rendering:pixelated;image-rendering:crisp-edges;z-index:1}
 #c2{z-index:2}
-#headstock-img{
-  position:absolute;
-  z-index:3;
-  pointer-events:none;
-  object-fit:contain;
-  /* Bottom half of screen, with 30/180 = 16.67% left/right margins */
-  top:50%;
-  left:16.67%;
-  width:66.67%;
-  height:50%;
-}
 #startBtn{
   position:absolute;
   z-index:10;
@@ -44,7 +33,6 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%}
   <canvas id="cBg" width="360" height="640"></canvas>
   <canvas id="c" width="180" height="320"></canvas>
   <canvas id="c2" width="360" height="640"></canvas>
-  <img id="headstock-img" src="headstock.png" alt="headstock">
   <button id="startBtn">TAP TO TUNE</button>
 </div>
 <script>
@@ -57,16 +45,28 @@ ctx.imageSmoothingEnabled = false;
 var c2 = document.getElementById('c2');
 var ctx2 = c2.getContext('2d');
 
+// ===== HEADSTOCK IMAGE — load via JS, draw on canvas =====
+var headstockImg = new Image();
+var headstockLoaded = false;
+headstockImg.onload = function() { headstockLoaded = true; };
+headstockImg.src = 'headstock.png';
+
+// Headstock draw area on hi-res canvas (360x640)
+// Bottom half: y 320–640, left/right margin 60px each (30px in pixel coords * 2)
+var HS_X = 60;
+var HS_Y = 320;
+var HS_W = 360 - 120; // 240
+var HS_H = 320;
+
 // ===== NOTES & TUNING =====
 var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-// Ukulele standard tuning: G4=392, C4=261.63, E4=329.63, A4=440
 var UKE_STRINGS = [
   { note: 'G', octave: 4, freq: 392.00 },
   { note: 'C', octave: 4, freq: 261.63 },
   { note: 'E', octave: 4, freq: 329.63 },
   { note: 'A', octave: 4, freq: 440.00 }
 ];
-var UKE_NOTE_INDICES = [7, 0, 4, 9]; // G=7, C=0, E=4, A=9 in NOTE_NAMES
+var UKE_NOTE_INDICES = [7, 0, 4, 9];
 
 var frame = 0;
 
@@ -97,17 +97,15 @@ var detectedCents = 0;
 var signalLevel = 0;
 var needleTarget = 0;
 var needlePos = 0;
-var isUkeString = false; // true when detected note matches G/C/E/A
+var isUkeString = false;
 
 // ===== PITCH DETECTION =====
 function autoCorrelate(buf, sampleRate) {
-  // Check if there's enough signal
   var rms = 0;
   for (var i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / buf.length);
-  if (rms < 0.01) return -1; // too quiet
+  if (rms < 0.01) return -1;
 
-  // Trim silence from edges
   var SIZE = buf.length;
   var r1 = 0, r2 = SIZE - 1;
   var threshold = 0.2;
@@ -121,34 +119,27 @@ function autoCorrelate(buf, sampleRate) {
   buf = buf.slice(r1, r2);
   SIZE = buf.length;
 
-  // Autocorrelation
-  var c2 = new Array(SIZE).fill(0);
+  var c2arr = new Array(SIZE).fill(0);
   for (var i = 0; i < SIZE; i++) {
     for (var j = 0; j < SIZE - i; j++) {
-      c2[i] += buf[j] * buf[j + i];
+      c2arr[i] += buf[j] * buf[j + i];
     }
   }
 
-  // Find first dip then first peak
   var d = 0;
-  while (c2[d] > c2[d + 1]) {
+  while (c2arr[d] > c2arr[d + 1]) {
     d++;
     if (d >= SIZE - 1) return -1;
   }
 
   var maxVal = -1, maxPos = -1;
   for (var i = d; i < SIZE; i++) {
-    if (c2[i] > maxVal) {
-      maxVal = c2[i];
-      maxPos = i;
-    }
+    if (c2arr[i] > maxVal) { maxVal = c2arr[i]; maxPos = i; }
   }
 
   var T0 = maxPos;
-
-  // Parabolic interpolation for sub-sample accuracy
   if (T0 > 0 && T0 < SIZE - 1) {
-    var x1 = c2[T0 - 1], x2 = c2[T0], x3 = c2[T0 + 1];
+    var x1 = c2arr[T0 - 1], x2 = c2arr[T0], x3 = c2arr[T0 + 1];
     var a = (x1 + x3 - 2 * x2) / 2;
     var b = (x3 - x1) / 2;
     if (a) T0 = T0 - b / (2 * a);
@@ -158,13 +149,11 @@ function autoCorrelate(buf, sampleRate) {
 }
 
 function freqToNote(freq) {
-  // Returns { noteIndex (0-11), octave, cents }
   var noteNum = 12 * (Math.log(freq / 440) / Math.log(2));
   var rounded = Math.round(noteNum);
   var cents = Math.floor((noteNum - rounded) * 100);
-  var idx = ((rounded % 12) + 12 + 9) % 12; // A=9 offset
+  var idx = ((rounded % 12) + 12 + 9) % 12;
   var octave = Math.floor((rounded + 69) / 12) - 1;
-  // Correct: A4 = 440, noteNum=0, rounded=0, idx=9, octave=4
   return { noteIndex: idx, octave: octave, cents: cents };
 }
 
@@ -182,7 +171,6 @@ function startAudio() {
     audioStarted = true;
   }).catch(function(err) {
     console.error('Mic error:', err);
-    // Show button again
     document.getElementById('startBtn').style.display = 'block';
     document.getElementById('startBtn').textContent = 'MIC DENIED';
   });
@@ -194,11 +182,9 @@ document.getElementById('startBtn').addEventListener('click', startAudio);
 function update() {
   frame++;
 
-  // Audio pitch detection
   if (audioStarted && analyser) {
     analyser.getFloatTimeDomainData(audioBuffer);
 
-    // Signal level for bar animation
     var rms = 0;
     for (var i = 0; i < audioBuffer.length; i++) rms += audioBuffer[i] * audioBuffer[i];
     rms = Math.sqrt(rms / audioBuffer.length);
@@ -212,17 +198,13 @@ function update() {
       detectedNote = info.noteIndex;
       detectedOctave = info.octave;
       detectedCents = info.cents;
-
-      // Needle: cents mapped to -1..1 range (±50 cents)
       needleTarget = Math.max(-1, Math.min(1, info.cents / 50));
 
-      // Check if this is a uke string note
       isUkeString = false;
       for (var i = 0; i < UKE_NOTE_INDICES.length; i++) {
         if (detectedNote === UKE_NOTE_INDICES[i]) { isUkeString = true; break; }
       }
     } else {
-      // No pitch detected — decay
       signalLevel *= 0.95;
       if (signalLevel < 0.01) {
         detectedNote = -1;
@@ -232,10 +214,8 @@ function update() {
     }
   }
 
-  // Smooth needle
   needlePos += (needleTarget - needlePos) * 0.12;
 
-  // Note glow — light up detected note, extra bright for GCEA
   for (var i = 0; i < 12; i++) {
     var target = 0;
     if (i === detectedNote && signalLevel > 0.05) {
@@ -248,7 +228,6 @@ function update() {
     }
   }
 
-  // Bar levels driven by signal
   var centerBar = Math.floor(((needlePos + 1) / 2) * (NB - 1));
   for (var i = 0; i < NB; i++) {
     var d = Math.abs(i - centerBar);
@@ -264,7 +243,7 @@ function update() {
 }
 
 // ========================================
-// BACKGROUND NOTES (same as v3)
+// BACKGROUND NOTES
 // ========================================
 var SZ = 160;
 var BG_NOTE_H = 160, BG_NOTE_GAP = 24, BG_NOTE_TOP = 56;
@@ -336,8 +315,6 @@ for (var i = 0; i < 3; i++) {
   bgNotePos.push({ x: BG_RIGHT_X, y: cy });
 }
 
-// Headstock image positioned via CSS
-
 // ========================================
 // DRAW LAYER 0: BACKGROUND
 // ========================================
@@ -395,19 +372,16 @@ function drawPixel() {
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(46, 0, 88, 320);
 
-  // Outer arc
   for (var i = 0; i <= 48; i++) {
     var a = a0 + (i / 48) * aS;
     ctx.fillStyle = '#5C4A1E';
     ctx.fillRect(mx + Math.cos(a) * (oR + 2) | 0, my + Math.sin(a) * (oR + 2) | 0, 1, 1);
   }
-  // Inner arc
   for (var i = 0; i <= 32; i++) {
     var a = a0 + (i / 32) * aS;
     ctx.fillStyle = '#3D2E0A';
     ctx.fillRect(mx + Math.cos(a) * (iR - 1) | 0, my + Math.sin(a) * (iR - 1) | 0, 1, 1);
   }
-  // Side lines
   var sides = [a0, a0 + aS];
   for (var s = 0; s < 2; s++) {
     var a = sides[s];
@@ -417,7 +391,6 @@ function drawPixel() {
       ctx.fillRect(mx + co * r | 0, my + si * r | 0, 1, 1);
     }
   }
-  // Tick marks
   for (var i = 0; i <= 10; i++) {
     var a = a0 + (i / 10) * aS;
     var co = Math.cos(a), si = Math.sin(a);
@@ -427,7 +400,6 @@ function drawPixel() {
       ctx.fillRect(mx + co * (oR + 3 + r) | 0, my + si * (oR + 3 + r) | 0, 1, 1);
     }
   }
-  // Radial bars
   for (var i = 0; i < NB; i++) {
     var a = a0 + (i / (NB - 1)) * aS;
     var co = Math.cos(a), si = Math.sin(a);
@@ -441,10 +413,8 @@ function drawPixel() {
       ctx.fillRect(mx + co * (iR + r) | 0, my + si * (iR + r) | 0, 1, 1);
     }
   }
-  // Pivot
   ctx.fillStyle = '#5C4A1E';
   ctx.fillRect(mx - 1, my - 1, 3, 3);
-  // Needle
   var na = a0 + ((needlePos + 1) / 2) * aS;
   var nc = Math.cos(na), ns = Math.sin(na);
   ctx.globalAlpha = 0.12;
@@ -459,7 +429,6 @@ function drawPixel() {
   }
   ctx.fillStyle = '#FF5050';
   ctx.fillRect(mx + nc * (oR + 1) | 0, my + ns * (oR + 1) | 0, 2, 2);
-  // Status
   ctx.fillStyle = '#3D2E0A';
   ctx.font = "3px 'Courier New',monospace";
   ctx.textAlign = 'center';
@@ -467,17 +436,15 @@ function drawPixel() {
 }
 
 // ========================================
-// DRAW LAYER 2: HI-RES TEXT
+// DRAW LAYER 2: HI-RES TEXT + HEADSTOCK IMAGE
 // ========================================
 function drawHiRes() {
   ctx2.clearRect(0, 0, 360, 640);
 
   var hmx = mx * S, hmy = my * S;
   var hNoteR = noteArcR * S;
-
   var isInTune = detectedNote >= 0 && Math.abs(detectedCents) < 5 && signalLevel > 0.05;
 
-  // Arc note names
   for (var i = 0; i < 12; i++) {
     var t = i / 11;
     var angle = a0 + t * aS;
@@ -487,7 +454,6 @@ function drawHiRes() {
     var glow = noteGlow[i];
     var size = 8 + glow * 6;
 
-    // Check if this note is a uke string
     var isUke = false;
     for (var u = 0; u < UKE_NOTE_INDICES.length; u++) {
       if (i === UKE_NOTE_INDICES[u]) { isUke = true; break; }
@@ -495,16 +461,12 @@ function drawHiRes() {
 
     var r, g, b;
     if (i === detectedNote && isInTune && isUke) {
-      // GCEA in tune — bright green
-      r = Math.floor(57 + 57 * glow);
-      g = 255;
-      b = 20;
+      r = Math.floor(57 + 57 * glow); g = 255; b = 20;
     } else if (glow > 0.8) {
       r = Math.floor(57 + 57 * (1 - glow)); g = 255; b = 20;
     } else if (glow > 0.3) {
       r = Math.floor(100 + 140 * glow); g = Math.floor(80 + 150 * glow); b = Math.floor(30 + 30 * glow);
     } else {
-      // Dim state: GCEA notes slightly brighter than others
       if (isUke) {
         r = Math.floor(80 + 40 * glow); g = Math.floor(65 + 30 * glow); b = Math.floor(15 + 20 * glow);
       } else {
@@ -525,7 +487,6 @@ function drawHiRes() {
     ctx2.globalAlpha = 1;
   }
 
-  // Current detected note (big, center top)
   var dispNote = detectedNote >= 0 ? NOTE_NAMES[detectedNote] : '--';
   var dispOctave = detectedNote >= 0 ? '' + detectedOctave : '';
   var isClose = detectedNote >= 0 && Math.abs(detectedCents) < 5;
@@ -549,14 +510,12 @@ function drawHiRes() {
     ctx2.globalAlpha = 1;
   }
 
-  // Cents display
   if (detectedNote >= 0) {
     var cStr = detectedCents > 0 ? '+' + detectedCents + '¢' : detectedCents + '¢';
     ctx2.fillStyle = Math.abs(detectedCents) < 5 ? '#39FF14' : Math.abs(detectedCents) < 20 ? '#FDCD60' : '#E83030';
     ctx2.font = "bold 12px 'Courier New',monospace";
     ctx2.fillText(cStr, hmx, 70);
 
-    // Frequency
     ctx2.fillStyle = '#5C4A1E';
     ctx2.font = "9px 'Courier New',monospace";
     ctx2.fillText(detectedFreq.toFixed(1) + ' Hz', hmx, 86);
@@ -566,14 +525,12 @@ function drawHiRes() {
     ctx2.fillText('listening...', hmx, 78);
   }
 
-  // IN TUNE label
   if (isClose && isUkeString) {
     ctx2.fillStyle = '#39FF14';
     ctx2.font = "bold 11px 'Courier New',monospace";
     ctx2.fillText('IN TUNE', hmx, 102);
   }
 
-  // ±50, 0 labels
   ctx2.fillStyle = '#5C4A1E';
   ctx2.font = "bold 9px 'Courier New',monospace";
   ctx2.textAlign = 'center';
@@ -583,7 +540,19 @@ function drawHiRes() {
   ctx2.fillText('+50', hmx + Math.cos(a0 + aS) * lR, hmy + Math.sin(a0 + aS) * lR);
   ctx2.fillText('0', hmx + Math.cos(a0 + aS / 2) * lR, hmy + Math.sin(a0 + aS / 2) * lR);
 
-  // Headstock image is handled by the <img> tag
+  // ===== DRAW HEADSTOCK IMAGE on canvas =====
+  if (headstockLoaded) {
+    // Fit image into the headstock area while maintaining aspect ratio
+    var imgW = headstockImg.width;
+    var imgH = headstockImg.height;
+    var scale = Math.min(HS_W / imgW, HS_H / imgH);
+    var drawW = imgW * scale;
+    var drawH = imgH * scale;
+    // Center within the headstock area
+    var drawX = HS_X + (HS_W - drawW) / 2;
+    var drawY = HS_Y + (HS_H - drawH) / 2;
+    ctx2.drawImage(headstockImg, drawX, drawY, drawW, drawH);
+  }
 }
 
 // ========================================
