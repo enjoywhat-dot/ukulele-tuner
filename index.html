@@ -247,9 +247,9 @@ function drawHeadstock(){
     var baseScale=HS_W/imgW;
     var scale=baseScale*HS_ZOOM;
     var drawW=imgW*scale, drawH=imgH*scale;
-    // Center horizontally in frame, align to top of frame area
+    // Center horizontally and vertically in bottom-half frame
     var drawX=HS_X+(HS_W-drawW)/2;
-    var drawY=HS_Y;
+    var drawY=HS_Y+(HS_H-drawH)/2;
     ctxHead.drawImage(headstockImg,drawX,drawY,drawW,drawH);
   }
 }
